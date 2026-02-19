@@ -1,6 +1,6 @@
 import { World } from '../ecs/World';
 import { ComponentManager } from '../ecs/ComponentManager';
-import { Position, PrevPosition, Acceleration, VerletPoint, FoodTag } from '../ecs/components';
+import { Position, PrevPosition, Acceleration, VerletPoint, FoodTag, Color } from '../ecs/components';
 
 export class SpawnerSystem {
   private world: World;
@@ -29,14 +29,20 @@ export class SpawnerSystem {
   private spawnFood() {
       const x = Math.random() * this.bounds.width;
       const y = Math.random() * this.bounds.height;
-      const radius = 5 + Math.random() * 5; // 5-10 size
+      const radius = 5 + Math.random() * 5;
 
       const entity = this.world.createEntity();
       this.world.addComponent(entity, Position.name, [x, y]);
-      this.world.addComponent(entity, PrevPosition.name, [x, y]); // Static initially
+      this.world.addComponent(entity, PrevPosition.name, [x, y]);
       this.world.addComponent(entity, Acceleration.name, [0, 0]);
 
-      this.world.addComponent(entity, VerletPoint.name, [radius, 0.98, 0]); // Not pinned
+      this.world.addComponent(entity, VerletPoint.name, [radius, 0.98, 0]);
       this.world.addComponent(entity, FoodTag.name, [1]);
+
+      // Green/Yellow Food
+      // r, g, b
+      const g = 0.5 + Math.random() * 0.5;
+      const r = Math.random() * 0.5;
+      this.world.addComponent(entity, Color.name, [r, g, 0.2]);
   }
 }

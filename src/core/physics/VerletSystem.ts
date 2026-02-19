@@ -1,5 +1,6 @@
 import { World } from '../ecs/World';
 import { ComponentManager } from '../ecs/ComponentManager';
+import { SpatialHashGrid } from './SpatialHashGrid';
 
 export class VerletSystem {
   private positionManager: ComponentManager<Float32Array>;
@@ -8,29 +9,49 @@ export class VerletSystem {
   private verletPointManager: ComponentManager<Float32Array>;
   private constraintManager: ComponentManager<Float32Array>;
 
+  private grid: SpatialHashGrid;
   private bounds: { width: number; height: number };
 
-  constructor(world: World, bounds: { width: number; height: number }) {
+  constructor(world: World, bounds: { width: number; height: number }, grid: SpatialHashGrid) {
     this.positionManager = world.getComponent('position');
     this.prevPositionManager = world.getComponent('prevPosition');
     this.accelerationManager = world.getComponent('acceleration');
     this.verletPointManager = world.getComponent('verletPoint');
     this.constraintManager = world.getComponent('constraint');
     this.bounds = bounds;
+    this.grid = grid;
   }
 
   update(dt: number) {
+    this.populateGrid();
+
     this.integrate(dt);
     this.resolveConstraints();
     this.resolveCollisions();
     this.applyBoundaries();
   }
 
+  private populateGrid() {
+    this.grid.clear();
+    const count = this.verletPointManager.getCount();
+    const activeEntities = this.verletPointManager.getDenseEntities();
+    const positions = this.positionManager.getRawData();
+
+    for (let i = 0; i < count; i++) {
+        const entityId = activeEntities[i];
+        const posIdx = this.positionManager.getIndex(entityId) * 2;
+        if (posIdx < 0) continue;
+        const x = positions[posIdx];
+        const y = positions[posIdx + 1];
+        this.grid.insert(entityId, x, y);
+    }
+  }
+
   private integrate(dt: number) {
     const positions = this.positionManager.getRawData();
     const prevPositions = this.prevPositionManager.getRawData();
     const accelerations = this.accelerationManager.getRawData();
-    const verletPoints = this.verletPointManager.getRawData(); // [radius, friction, isPinned]
+    const verletPoints = this.verletPointManager.getRawData();
 
     const activeEntities = this.verletPointManager.getDenseEntities();
     const count = this.verletPointManager.getCount();
@@ -39,7 +60,6 @@ export class VerletSystem {
 
     for (let i = 0; i < count; i++) {
       const entityId = activeEntities[i];
-
       const posIdx = this.positionManager.getIndex(entityId) * 2;
       const prevIdx = this.prevPositionManager.getIndex(entityId) * 2;
       const accIdx = this.accelerationManager.getIndex(entityId) * 2;
@@ -57,21 +77,18 @@ export class VerletSystem {
       const accX = accelerations[accIdx];
       const accY = accelerations[accIdx + 1];
 
-      // Verlet Integration
       const velX = (x - prevX) * friction;
       const velY = (y - prevY) * friction;
 
       const newX = x + velX + accX * dtSq;
       const newY = y + velY + accY * dtSq;
 
-      // Update old pos BEFORE writing new pos to current
       prevPositions[prevIdx] = x;
       prevPositions[prevIdx + 1] = y;
 
       positions[posIdx] = newX;
       positions[posIdx + 1] = newY;
 
-      // Reset acceleration
       accelerations[accIdx] = 0;
       accelerations[accIdx + 1] = 0;
     }
@@ -83,20 +100,17 @@ export class VerletSystem {
     const count = this.constraintManager.getCount();
     const positions = this.positionManager.getRawData();
 
-    // Re-use loop variables
     let iter, i, idx, entityA, entityB, dist, stiff;
     let idxA, idxB, x1, y1, x2, y2, dx, dy, currentDistSq, currentDist, delta, percent, offsetX, offsetY;
 
     for (iter = 0; iter < iterations; iter++) {
         for (i = 0; i < count; i++) {
-
             idx = i * 4;
             entityA = constraints[idx];
             entityB = constraints[idx + 1];
             dist = constraints[idx + 2];
             stiff = constraints[idx + 3];
 
-            // Safety check for entities existence (O(1))
             if (!this.positionManager.has(entityA) || !this.positionManager.has(entityB)) continue;
 
             idxA = this.positionManager.getIndex(entityA) * 2;
@@ -111,7 +125,7 @@ export class VerletSystem {
             dy = y1 - y2;
             currentDistSq = dx*dx + dy*dy;
 
-            if (currentDistSq < 0.0001) currentDistSq = 0.0001; // Avoid singularity
+            if (currentDistSq < 0.0001) currentDistSq = 0.0001;
 
             currentDist = Math.sqrt(currentDistSq);
 
@@ -130,14 +144,13 @@ export class VerletSystem {
   }
 
   private resolveCollisions() {
-      // Simple O(N^2) circle collision.
       const positions = this.positionManager.getRawData();
       const verletPoints = this.verletPointManager.getRawData();
-      const activeEntities = this.verletPointManager.getDenseEntities();
       const count = this.verletPointManager.getCount();
+      const activeEntities = this.verletPointManager.getDenseEntities();
 
-      let i, j, idA, idxA, vpIdxA, radiusA, idB, idxB, vpIdxB, radiusB;
-      let dx, dy, distSq, minDist, dist, overlap, nx, ny, correction;
+      let i, idA, idxA, vpIdxA, radiusA;
+      let cellX, cellY, cx, cy, neighborId, cellIndex;
 
       for (i = 0; i < count; i++) {
           idA = activeEntities[i];
@@ -145,31 +158,58 @@ export class VerletSystem {
           vpIdxA = this.verletPointManager.getIndex(idA) * 3;
           radiusA = verletPoints[vpIdxA];
 
-          for (j = i + 1; j < count; j++) {
-              idB = activeEntities[j];
-              idxB = this.positionManager.getIndex(idB) * 2;
-              vpIdxB = this.verletPointManager.getIndex(idB) * 3;
-              radiusB = verletPoints[vpIdxB];
+          const px = positions[idxA];
+          const py = positions[idxA + 1];
 
-              dx = positions[idxA] - positions[idxB];
-              dy = positions[idxA + 1] - positions[idxB + 1];
-              distSq = dx*dx + dy*dy;
-              minDist = radiusA + radiusB;
+          cellX = this.grid.getCellX(px);
+          cellY = this.grid.getCellY(py);
 
-              if (distSq < minDist * minDist) {
-                  dist = Math.sqrt(distSq);
-                  overlap = minDist - dist;
-                  nx = dx / dist;
-                  ny = dy / dist;
+          for (let dyCell = -1; dyCell <= 1; dyCell++) {
+              for (let dxCell = -1; dxCell <= 1; dxCell++) {
+                  cx = cellX + dxCell;
+                  cy = cellY + dyCell;
 
-                  correction = overlap * 0.5;
+                  if (cx < 0 || cx >= this.grid.getWidthInCells() || cy < 0 || cy >= this.grid.getHeightInCells()) continue;
 
-                  positions[idxA] += nx * correction;
-                  positions[idxA + 1] += ny * correction;
-                  positions[idxB] -= nx * correction;
-                  positions[idxB + 1] -= ny * correction;
+                  cellIndex = cx + cy * this.grid.getWidthInCells();
+
+                  neighborId = this.grid.heads[cellIndex];
+
+                  while (neighborId !== -1) {
+                      if (neighborId > idA) {
+                          this.checkCollision(idA, neighborId, idxA, radiusA, positions, verletPoints);
+                      }
+                      neighborId = this.grid.next[neighborId];
+                  }
               }
           }
+      }
+  }
+
+  private checkCollision(_idA: number, idB: number, idxA: number, radiusA: number, positions: Float32Array, verletPoints: Float32Array) {
+      if (!this.verletPointManager.has(idB)) return;
+
+      const idxB = this.positionManager.getIndex(idB) * 2;
+      const vpIdxB = this.verletPointManager.getIndex(idB) * 3;
+      const radiusB = verletPoints[vpIdxB];
+
+      const dx = positions[idxA] - positions[idxB];
+      const dy = positions[idxA + 1] - positions[idxB + 1];
+      const distSq = dx*dx + dy*dy;
+      const minDist = radiusA + radiusB;
+
+      if (distSq < minDist * minDist) {
+          const dist = Math.sqrt(distSq);
+          const overlap = minDist - dist;
+          const nx = dx / dist;
+          const ny = dy / dist;
+
+          const correction = overlap * 0.5;
+
+          positions[idxA] += nx * correction;
+          positions[idxA + 1] += ny * correction;
+          positions[idxB] -= nx * correction;
+          positions[idxB + 1] -= ny * correction;
       }
   }
 
@@ -177,10 +217,6 @@ export class VerletSystem {
       const positions = this.positionManager.getRawData();
       const prevPositions = this.prevPositionManager.getRawData();
       const count = this.positionManager.getCount();
-      // Iterate active entities of position manager?
-      // Or just iterate count?
-      // Since data is packed 0..count, we can iterate i * stride.
-
       const { width, height } = this.bounds;
       const damping = 0.8;
 
