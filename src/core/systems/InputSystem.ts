@@ -2,10 +2,10 @@ import { World } from '../ecs/World';
 import { ComponentManager } from '../ecs/ComponentManager';
 
 export class InputSystem {
-  private accelerationManager: ComponentManager<Float32Array>;
-  private playerTagManager: ComponentManager<Uint8Array>;
+  // Use Velocity-based control (PrevPosition manipulation) instead of Acceleration
   private positionManager: ComponentManager<Float32Array>;
   private prevPositionManager: ComponentManager<Float32Array>;
+  private playerTagManager: ComponentManager<Uint8Array>;
 
   // Joystick State
   private isDragging: boolean = false;
@@ -14,19 +14,17 @@ export class InputSystem {
   private inputX: number = 0;
   private inputY: number = 0;
 
-  // Constants
-  // Force drastically reduced from 100 to 40 for playable control
-  private readonly FORCE_MULTIPLIER = 40.0;
-  // Friction increased to 0.9 for near-instant braking (highly viscous fluid)
-  private readonly FRICTION_FACTOR = 0.9;
+  // ARCADE PHYSICS CONSTANTS
+  private readonly MAX_SPEED = 2.5; // Units per frame (approx 150px/sec at 60fps)
+  private readonly ACCEL_FACTOR = 0.15; // 15% blend towards target velocity per frame (Responsive but smooth)
+  private readonly BRAKE_FACTOR = 0.3; // 30% reduction of velocity per frame when releasing (Fast stop)
 
   private canvas: HTMLCanvasElement | null;
 
   constructor(world: World, canvasId: string) {
-    this.accelerationManager = world.getComponent('acceleration');
-    this.playerTagManager = world.getComponent('playerTag');
     this.positionManager = world.getComponent('position');
     this.prevPositionManager = world.getComponent('prevPosition');
+    this.playerTagManager = world.getComponent('playerTag');
 
     this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
 
@@ -35,20 +33,16 @@ export class InputSystem {
     this.onTouchMove = this.onTouchMove.bind(this);
     this.onInputEnd = this.onInputEnd.bind(this);
 
-    // Mouse support for debugging
+    // Mouse support
     this.onMouseDown = this.onMouseDown.bind(this);
     this.onMouseMove = this.onMouseMove.bind(this);
-    // onInputEnd handles mouseup and mouseleave as well
 
     if (this.canvas) {
         this.canvas.addEventListener('touchstart', this.onTouchStart, { passive: false });
         this.canvas.addEventListener('touchmove', this.onTouchMove, { passive: false });
-
-        // End events
         this.canvas.addEventListener('touchend', this.onInputEnd);
         this.canvas.addEventListener('touchcancel', this.onInputEnd);
 
-        // Debug mouse - Attached to canvas as requested
         this.canvas.addEventListener('mousedown', this.onMouseDown);
         this.canvas.addEventListener('mousemove', this.onMouseMove);
         this.canvas.addEventListener('mouseup', this.onInputEnd);
@@ -83,8 +77,6 @@ export class InputSystem {
   }
 
   private onInputEnd(_e: Event) {
-     // For touch events, we can check touches.length but strictly we just reset on any end/cancel
-     // For mouse events, it's a simple trigger.
      this.resetInput();
   }
 
@@ -107,11 +99,9 @@ export class InputSystem {
   private updateInputVector(currentX: number, currentY: number) {
       const dx = currentX - this.originX;
       const dy = currentY - this.originY;
-
       const dist = Math.sqrt(dx*dx + dy*dy);
 
-      // Strict Normalization: Input must be a unit vector (-1 to 1)
-      // Do NOT use distance as magnitude.
+      // Strict Normalization
       if (dist > 0.001) {
           this.inputX = dx / dist;
           this.inputY = dy / dist;
@@ -127,39 +117,53 @@ export class InputSystem {
 
     if (count === 0) return;
 
-    const accelerations = this.accelerationManager.getRawData();
     const positions = this.positionManager.getRawData();
     const prevPositions = this.prevPositionManager.getRawData();
 
     for (let i = 0; i < count; i++) {
         const entityId = activePlayers[i];
 
+        if (!this.positionManager.has(entityId) || !this.prevPositionManager.has(entityId)) continue;
+
+        const posIdx = this.positionManager.getIndex(entityId) * 2;
+        const prevIdx = this.prevPositionManager.getIndex(entityId) * 2;
+
+        const px = positions[posIdx];
+        const py = positions[posIdx + 1];
+        const ppx = prevPositions[prevIdx];
+        const ppy = prevPositions[prevIdx + 1];
+
+        // 1. Calculate Current Velocity
+        const currentVelX = px - ppx;
+        const currentVelY = py - ppy;
+
+        // 2. Calculate Target Velocity
+        let targetVelX = 0;
+        let targetVelY = 0;
+
         if (this.isDragging) {
-            // Apply Force
-            if (this.accelerationManager.has(entityId)) {
-                const accIdx = this.accelerationManager.getIndex(entityId) * 2;
-                accelerations[accIdx] += this.inputX * this.FORCE_MULTIPLIER;
-                accelerations[accIdx + 1] += this.inputY * this.FORCE_MULTIPLIER;
-            }
+            targetVelX = this.inputX * this.MAX_SPEED;
+            targetVelY = this.inputY * this.MAX_SPEED;
+
+            // Lerp towards target velocity (Arcade responsiveness)
+            const newVelX = currentVelX + (targetVelX - currentVelX) * this.ACCEL_FACTOR;
+            const newVelY = currentVelY + (targetVelY - currentVelY) * this.ACCEL_FACTOR;
+
+            // Apply Velocity: Set PrevPos = Pos - NewVel
+            prevPositions[prevIdx] = px - newVelX;
+            prevPositions[prevIdx + 1] = py - newVelY;
         } else {
-            // Apply Aggressive Friction (Viscosity)
-            if (this.positionManager.has(entityId) && this.prevPositionManager.has(entityId)) {
-                const posIdx = this.positionManager.getIndex(entityId) * 2;
-                const prevIdx = this.prevPositionManager.getIndex(entityId) * 2;
+            // Braking Logic (Decay velocity towards 0)
+            const newVelX = currentVelX * (1.0 - this.BRAKE_FACTOR);
+            const newVelY = currentVelY * (1.0 - this.BRAKE_FACTOR);
 
-                const px = positions[posIdx];
-                const py = positions[posIdx + 1];
-                let ppx = prevPositions[prevIdx];
-                let ppy = prevPositions[prevIdx + 1];
-
-                // Formula: prevPos += (pos - prevPos) * friction
-                // Friction 0.8 means ppx moves 80% towards px.
-                // This reduces velocity (px - ppx) to 20% of its original value per frame.
-                ppx += (px - ppx) * this.FRICTION_FACTOR;
-                ppy += (py - ppy) * this.FRICTION_FACTOR;
-
-                prevPositions[prevIdx] = ppx;
-                prevPositions[prevIdx + 1] = ppy;
+            // If very slow, snap to stop to prevent micro-drift
+            if (Math.abs(newVelX) < 0.01 && Math.abs(newVelY) < 0.01) {
+                prevPositions[prevIdx] = px; // Stop: prev = current
+                prevPositions[prevIdx + 1] = py;
+            } else {
+                prevPositions[prevIdx] = px - newVelX;
+                prevPositions[prevIdx + 1] = py - newVelY;
             }
         }
     }

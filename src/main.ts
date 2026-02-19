@@ -57,8 +57,9 @@ function createCell(centerX: number, centerY: number, radius: number, segments: 
     world.getComponent(PrevPosition.name).add(centerEntity, [centerX, centerY]);
     world.getComponent(Acceleration.name).add(centerEntity, [0, 0]);
 
-    // Friction: Player 0.85 (damped), Others 0.95 (slippery)
-    const friction = isPlayer ? 0.85 : 0.95;
+    // Friction: InputSystem handles player movement. Keep natural physics consistent.
+    // 0.9 for everyone (Standard Verlet damping)
+    const friction = 0.9;
     world.getComponent(VerletPoint.name).add(centerEntity, [radius/2, friction, 0]);
 
     if (isPlayer) {
