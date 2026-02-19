@@ -53,3 +53,11 @@ export const DNA = {
   stride: 6,
   type: Float32Array
 };
+
+// Camera Data
+// [x, y, currentZoom, targetZoom]
+export const CameraData = {
+  name: 'cameraData',
+  stride: 4,
+  type: Float32Array
+};

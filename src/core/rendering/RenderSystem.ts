@@ -19,6 +19,7 @@ export class RenderSystem {
   private positionManager: ComponentManager<Float32Array>;
   private verletPointManager: ComponentManager<Float32Array>;
   private colorManager: ComponentManager<Float32Array>;
+  private cameraManager: ComponentManager<Float32Array>;
 
   // WebGL Objects
   private vao: WebGLVertexArrayObject | null = null;
@@ -44,6 +45,7 @@ export class RenderSystem {
     this.positionManager = world.getComponent('position');
     this.verletPointManager = world.getComponent('verletPoint');
     this.colorManager = world.getComponent('color');
+    this.cameraManager = world.getComponent('cameraData');
 
     this.particleProgram = this.createProgram(vertexShaderSource, fragmentShaderSource);
     this.postProcessProgram = this.createProgram(ppVertexShader, ppFragmentShader);
@@ -114,6 +116,27 @@ export class RenderSystem {
 
     const uResolution = this.gl.getUniformLocation(this.particleProgram, "u_resolution");
     this.gl.uniform2f(uResolution, this.canvas.width, this.canvas.height);
+
+    // Camera Uniforms
+    let camX = 0;
+    let camY = 0;
+    let zoom = 1.0;
+
+    const cameraEntities = this.cameraManager.getDenseEntities();
+    if (cameraEntities.length > 0) {
+        const camId = cameraEntities[0];
+        const idx = this.cameraManager.getIndex(camId) * 4;
+        const camData = this.cameraManager.getRawData();
+        camX = camData[idx];
+        camY = camData[idx + 1];
+        zoom = camData[idx + 2];
+    }
+
+    const uCamera = this.gl.getUniformLocation(this.particleProgram, "u_camera");
+    this.gl.uniform2f(uCamera, camX, camY);
+
+    const uZoom = this.gl.getUniformLocation(this.particleProgram, "u_zoom");
+    this.gl.uniform1f(uZoom, zoom);
 
     // 3. Fill Instance Buffer
     const count = this.verletPointManager.getCount();

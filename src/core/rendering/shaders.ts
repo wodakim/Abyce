@@ -10,21 +10,30 @@ layout(location = 2) in float a_radius; // Instance radius
 layout(location = 3) in vec3 a_color; // Instance color
 
 uniform vec2 u_resolution;
+uniform vec2 u_camera;
+uniform float u_zoom;
 
 out vec3 v_color;
 out vec2 v_uv;
 
 void main() {
     // Transform unit quad to world space
-    // Scale by radius * 2.0 to give room for soft edge glow/metaball field
-    float visualRadius = a_radius * 2.5;
+    // Scale by radius (Physics faithful)
+    float visualRadius = a_radius;
 
     vec2 worldPos = (a_quad * visualRadius) + a_position;
 
-    vec2 zeroToOne = worldPos / u_resolution;
-    vec2 zeroToTwo = zeroToOne * 2.0;
-    vec2 clipSpace = zeroToTwo - 1.0;
+    // Apply Camera Transform
+    // Center 0,0 is the camera position
+    vec2 viewPos = (worldPos - u_camera) * u_zoom;
 
+    // Convert to Clip Space
+    // Divide by resolution/2 to get -1 to 1 range (assuming viewPos is in pixels)
+    // u_resolution is full width/height.
+    // clip = viewPos / (u_resolution / 2.0)
+    vec2 clipSpace = (viewPos / u_resolution) * 2.0;
+
+    // Flip Y because WebGL Y is up, but our World Y is down
     gl_Position = vec4(clipSpace.x, -clipSpace.y, 0.0, 1.0);
 
     v_color = a_color;

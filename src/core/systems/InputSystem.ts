@@ -5,11 +5,18 @@ export class InputSystem {
   private accelerationManager: ComponentManager<Float32Array>;
   private playerTagManager: ComponentManager<Uint8Array>;
   private positionManager: ComponentManager<Float32Array>;
+  private prevPositionManager: ComponentManager<Float32Array>;
 
-  // Input State
-  private targetX: number = 0;
-  private targetY: number = 0;
-  private isTouching: boolean = false;
+  // Joystick State
+  private isDragging: boolean = false;
+  private originX: number = 0;
+  private originY: number = 0;
+  private inputX: number = 0;
+  private inputY: number = 0;
+
+  private readonly MAX_JOYSTICK_RADIUS = 50.0;
+  private readonly FORCE_MULTIPLIER = 3000.0;
+  private readonly FRICTION_FACTOR = 0.2;
 
   private canvas: HTMLCanvasElement | null;
 
@@ -17,97 +24,141 @@ export class InputSystem {
     this.accelerationManager = world.getComponent('acceleration');
     this.playerTagManager = world.getComponent('playerTag');
     this.positionManager = world.getComponent('position');
+    this.prevPositionManager = world.getComponent('prevPosition');
 
     this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
-    if (!this.canvas) {
-        console.warn("InputSystem: Canvas not found. Input will not work.");
-    }
 
     // Bind events
-    this.onMouseMove = this.onMouseMove.bind(this);
-    this.onTouchMove = this.onTouchMove.bind(this);
     this.onTouchStart = this.onTouchStart.bind(this);
+    this.onTouchMove = this.onTouchMove.bind(this);
     this.onTouchEnd = this.onTouchEnd.bind(this);
 
-    window.addEventListener('mousemove', this.onMouseMove);
-    window.addEventListener('touchmove', this.onTouchMove, { passive: false });
-    window.addEventListener('touchstart', this.onTouchStart, { passive: false });
-    window.addEventListener('touchend', this.onTouchEnd);
-  }
+    // Mouse support for debugging
+    this.onMouseDown = this.onMouseDown.bind(this);
+    this.onMouseMove = this.onMouseMove.bind(this);
+    this.onMouseUp = this.onMouseUp.bind(this);
 
-  private onMouseMove(e: MouseEvent) {
-    this.targetX = e.clientX;
-    this.targetY = e.clientY;
-    this.isTouching = true;
-  }
+    if (this.canvas) {
+        this.canvas.addEventListener('touchstart', this.onTouchStart, { passive: false });
+        this.canvas.addEventListener('touchmove', this.onTouchMove, { passive: false });
+        this.canvas.addEventListener('touchend', this.onTouchEnd);
+        this.canvas.addEventListener('touchcancel', this.onTouchEnd);
 
-  private onTouchMove(e: TouchEvent) {
-    e.preventDefault();
-    if (e.touches.length > 0) {
-      this.targetX = e.touches[0].clientX;
-      this.targetY = e.touches[0].clientY;
-      this.isTouching = true;
+        // Debug mouse
+        this.canvas.addEventListener('mousedown', this.onMouseDown);
+        window.addEventListener('mousemove', this.onMouseMove);
+        window.addEventListener('mouseup', this.onMouseUp);
     }
   }
 
   private onTouchStart(e: TouchEvent) {
     e.preventDefault();
-    if (e.touches.length > 0) {
-      this.targetX = e.touches[0].clientX;
-      this.targetY = e.touches[0].clientY;
-      this.isTouching = true;
+    if (!this.isDragging && e.touches.length > 0) {
+        this.isDragging = true;
+        this.originX = e.touches[0].clientX;
+        this.originY = e.touches[0].clientY;
+        this.inputX = 0;
+        this.inputY = 0;
+    }
+  }
+
+  private onTouchMove(e: TouchEvent) {
+    e.preventDefault();
+    if (this.isDragging && e.touches.length > 0) {
+        const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
+        this.updateInputVector(currentX, currentY);
     }
   }
 
   private onTouchEnd(e: TouchEvent) {
-      if (e.touches.length === 0) {
-        this.isTouching = false;
+     if (e.touches.length === 0) {
+         this.isDragging = false;
+         this.inputX = 0;
+         this.inputY = 0;
+     }
+  }
+
+  private onMouseDown(e: MouseEvent) {
+      if (!this.isDragging) {
+          this.isDragging = true;
+          this.originX = e.clientX;
+          this.originY = e.clientY;
+          this.inputX = 0;
+          this.inputY = 0;
       }
   }
 
+  private onMouseMove(e: MouseEvent) {
+      if (this.isDragging) {
+          this.updateInputVector(e.clientX, e.clientY);
+      }
+  }
+
+  private onMouseUp(_e: MouseEvent) {
+      if (this.isDragging) {
+          this.isDragging = false;
+          this.inputX = 0;
+          this.inputY = 0;
+      }
+  }
+
+  private updateInputVector(currentX: number, currentY: number) {
+      let dx = currentX - this.originX;
+      let dy = currentY - this.originY;
+
+      const dist = Math.sqrt(dx*dx + dy*dy);
+
+      if (dist > this.MAX_JOYSTICK_RADIUS) {
+          const ratio = this.MAX_JOYSTICK_RADIUS / dist;
+          dx *= ratio;
+          dy *= ratio;
+      }
+
+      // Normalize to -1..1
+      this.inputX = dx / this.MAX_JOYSTICK_RADIUS;
+      this.inputY = dy / this.MAX_JOYSTICK_RADIUS;
+  }
+
   update(_dt: number) {
-    if (!this.isTouching) return;
-
-    // Apply force to player entities
     const activePlayers = this.playerTagManager.getDenseEntities();
-    const count = this.playerTagManager.getCount();
+    const count = activePlayers.length;
 
-    const positions = this.positionManager.getRawData();
+    if (count === 0) return;
+
     const accelerations = this.accelerationManager.getRawData();
-
-    // Constant force magnitude
-    // Make force proportional to distance?
-    const force = 5000;
+    const positions = this.positionManager.getRawData();
+    const prevPositions = this.prevPositionManager.getRawData();
 
     for (let i = 0; i < count; i++) {
         const entityId = activePlayers[i];
 
-        // Get position of player
-        if (!this.positionManager.has(entityId)) continue;
+        if (this.isDragging) {
+            // Apply Force
+            if (this.accelerationManager.has(entityId)) {
+                const accIdx = this.accelerationManager.getIndex(entityId) * 2;
+                accelerations[accIdx] += this.inputX * this.FORCE_MULTIPLIER;
+                accelerations[accIdx + 1] += this.inputY * this.FORCE_MULTIPLIER;
+            }
+        } else {
+            // Apply Friction (Viscosity)
+            if (this.positionManager.has(entityId) && this.prevPositionManager.has(entityId)) {
+                const posIdx = this.positionManager.getIndex(entityId) * 2;
+                const prevIdx = this.prevPositionManager.getIndex(entityId) * 2;
 
-        const posIdx = this.positionManager.getIndex(entityId) * 2;
-        const x = positions[posIdx];
-        const y = positions[posIdx + 1];
+                const px = positions[posIdx];
+                const py = positions[posIdx + 1];
+                let ppx = prevPositions[prevIdx];
+                let ppy = prevPositions[prevIdx + 1];
 
-        // Calculate vector to target
-        const dx = this.targetX - x;
-        const dy = this.targetY - y;
+                // Formula: prevPos += (pos - prevPos) * friction
+                ppx += (px - ppx) * this.FRICTION_FACTOR;
+                ppy += (py - ppy) * this.FRICTION_FACTOR;
 
-        const distSq = dx*dx + dy*dy;
-        if (distSq < 100) continue; // Close enough
-
-        const dist = Math.sqrt(distSq);
-
-        // Normalize
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        // Apply force to acceleration
-        if (!this.accelerationManager.has(entityId)) continue;
-
-        const accIdx = this.accelerationManager.getIndex(entityId) * 2;
-        accelerations[accIdx] += nx * force;
-        accelerations[accIdx + 1] += ny * force;
+                prevPositions[prevIdx] = ppx;
+                prevPositions[prevIdx + 1] = ppy;
+            }
+        }
     }
   }
 }
