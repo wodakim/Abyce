@@ -10,7 +10,8 @@ import { SpatialHashGrid } from './core/physics/SpatialHashGrid';
 import { NativeBridge } from './core/bridge/NativeBridge';
 import { AudioSystem, audioSystem } from './core/audio/AudioSystem';
 import { Serializer } from './core/io/Serializer';
-import { Position, PrevPosition, Acceleration, VerletPoint, Constraint, PlayerTag, FoodTag, Color, DNA } from './core/ecs/components';
+import { Position, PrevPosition, Acceleration, VerletPoint, Constraint, PlayerTag, FoodTag, Color, DNA, CameraData } from './core/ecs/components';
+import { CameraSystem } from './core/systems/CameraSystem';
 
 import './ui/main';
 import { uiEvents } from './ui/App';
@@ -26,16 +27,22 @@ world.registerComponent(PlayerTag.name, PlayerTag.type, PlayerTag.stride);
 world.registerComponent(FoodTag.name, FoodTag.type, FoodTag.stride);
 world.registerComponent(Color.name, Color.type, Color.stride);
 world.registerComponent(DNA.name, DNA.type, DNA.stride);
+world.registerComponent(CameraData.name, CameraData.type, CameraData.stride);
 
 const bounds = { width: window.innerWidth, height: window.innerHeight };
 
 const spatialHash = new SpatialHashGrid(bounds.width, bounds.height, 100);
 const verletSystem = new VerletSystem(world, bounds, spatialHash);
+const cameraSystem = new CameraSystem(world);
 const renderSystem = new RenderSystem(world, 'gameCanvas');
 const inputSystem = new InputSystem(world, 'gameCanvas');
 const spawnerSystem = new SpawnerSystem(world, bounds);
 const predationSystem = new PredationSystem(world, spatialHash);
 const nativeBridge = new NativeBridge();
+
+// Create Singleton Camera
+const cameraEntity = world.createEntity();
+world.addComponent(cameraEntity, CameraData.name, [0, 0, 1.5, 1.5]);
 
 // Audio Init on Click
 window.addEventListener('click', () => {
@@ -172,6 +179,7 @@ const loop = new GameLoop(
     inputSystem.update(dt);
     verletSystem.update(dt);
     predationSystem.update(dt);
+    cameraSystem.update(dt);
 
     if (frameCount % 60 === 0) {
         const playerEntities = world.getComponent<Uint8Array>(PlayerTag.name).getDenseEntities();
