@@ -14,9 +14,11 @@ export class InputSystem {
   private inputX: number = 0;
   private inputY: number = 0;
 
-  private readonly MAX_JOYSTICK_RADIUS = 50.0;
-  private readonly FORCE_MULTIPLIER = 3000.0;
-  private readonly FRICTION_FACTOR = 0.2;
+  // Constants
+  // Force reduced from 3000 to 100 per user request
+  private readonly FORCE_MULTIPLIER = 100.0;
+  // Friction increased to 0.8 for aggressive braking (viscous fluid)
+  private readonly FRICTION_FACTOR = 0.8;
 
   private canvas: HTMLCanvasElement | null;
 
@@ -31,24 +33,33 @@ export class InputSystem {
     // Bind events
     this.onTouchStart = this.onTouchStart.bind(this);
     this.onTouchMove = this.onTouchMove.bind(this);
-    this.onTouchEnd = this.onTouchEnd.bind(this);
+    this.onInputEnd = this.onInputEnd.bind(this);
 
     // Mouse support for debugging
     this.onMouseDown = this.onMouseDown.bind(this);
     this.onMouseMove = this.onMouseMove.bind(this);
-    this.onMouseUp = this.onMouseUp.bind(this);
+    // onInputEnd handles mouseup and mouseleave as well
 
     if (this.canvas) {
         this.canvas.addEventListener('touchstart', this.onTouchStart, { passive: false });
         this.canvas.addEventListener('touchmove', this.onTouchMove, { passive: false });
-        this.canvas.addEventListener('touchend', this.onTouchEnd);
-        this.canvas.addEventListener('touchcancel', this.onTouchEnd);
 
-        // Debug mouse
+        // End events
+        this.canvas.addEventListener('touchend', this.onInputEnd);
+        this.canvas.addEventListener('touchcancel', this.onInputEnd);
+
+        // Debug mouse - Attached to canvas as requested
         this.canvas.addEventListener('mousedown', this.onMouseDown);
-        window.addEventListener('mousemove', this.onMouseMove);
-        window.addEventListener('mouseup', this.onMouseUp);
+        this.canvas.addEventListener('mousemove', this.onMouseMove);
+        this.canvas.addEventListener('mouseup', this.onInputEnd);
+        this.canvas.addEventListener('mouseleave', this.onInputEnd);
     }
+  }
+
+  private resetInput() {
+      this.isDragging = false;
+      this.inputX = 0;
+      this.inputY = 0;
   }
 
   private onTouchStart(e: TouchEvent) {
@@ -71,12 +82,10 @@ export class InputSystem {
     }
   }
 
-  private onTouchEnd(e: TouchEvent) {
-     if (e.touches.length === 0) {
-         this.isDragging = false;
-         this.inputX = 0;
-         this.inputY = 0;
-     }
+  private onInputEnd(_e: Event) {
+     // For touch events, we can check touches.length but strictly we just reset on any end/cancel
+     // For mouse events, it's a simple trigger.
+     this.resetInput();
   }
 
   private onMouseDown(e: MouseEvent) {
@@ -95,29 +104,21 @@ export class InputSystem {
       }
   }
 
-  private onMouseUp(_e: MouseEvent) {
-      if (this.isDragging) {
-          this.isDragging = false;
-          this.inputX = 0;
-          this.inputY = 0;
-      }
-  }
-
   private updateInputVector(currentX: number, currentY: number) {
-      let dx = currentX - this.originX;
-      let dy = currentY - this.originY;
+      const dx = currentX - this.originX;
+      const dy = currentY - this.originY;
 
       const dist = Math.sqrt(dx*dx + dy*dy);
 
-      if (dist > this.MAX_JOYSTICK_RADIUS) {
-          const ratio = this.MAX_JOYSTICK_RADIUS / dist;
-          dx *= ratio;
-          dy *= ratio;
+      // Strict Normalization: Input must be a unit vector (-1 to 1)
+      // Do NOT use distance as magnitude.
+      if (dist > 0.001) {
+          this.inputX = dx / dist;
+          this.inputY = dy / dist;
+      } else {
+          this.inputX = 0;
+          this.inputY = 0;
       }
-
-      // Normalize to -1..1
-      this.inputX = dx / this.MAX_JOYSTICK_RADIUS;
-      this.inputY = dy / this.MAX_JOYSTICK_RADIUS;
   }
 
   update(_dt: number) {
@@ -141,7 +142,7 @@ export class InputSystem {
                 accelerations[accIdx + 1] += this.inputY * this.FORCE_MULTIPLIER;
             }
         } else {
-            // Apply Friction (Viscosity)
+            // Apply Aggressive Friction (Viscosity)
             if (this.positionManager.has(entityId) && this.prevPositionManager.has(entityId)) {
                 const posIdx = this.positionManager.getIndex(entityId) * 2;
                 const prevIdx = this.prevPositionManager.getIndex(entityId) * 2;
@@ -152,6 +153,8 @@ export class InputSystem {
                 let ppy = prevPositions[prevIdx + 1];
 
                 // Formula: prevPos += (pos - prevPos) * friction
+                // Friction 0.8 means ppx moves 80% towards px.
+                // This reduces velocity (px - ppx) to 20% of its original value per frame.
                 ppx += (px - ppx) * this.FRICTION_FACTOR;
                 ppy += (py - ppy) * this.FRICTION_FACTOR;
 
