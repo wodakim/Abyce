@@ -1,0 +1,8 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #1a1a2e; /* Dark blue */
+}
+canvas {
+  display: block;
+}
