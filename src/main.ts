@@ -56,7 +56,10 @@ function createCell(centerX: number, centerY: number, radius: number, segments: 
     world.getComponent(Position.name).add(centerEntity, [centerX, centerY]);
     world.getComponent(PrevPosition.name).add(centerEntity, [centerX, centerY]);
     world.getComponent(Acceleration.name).add(centerEntity, [0, 0]);
-    world.getComponent(VerletPoint.name).add(centerEntity, [radius/2, 0.95, 0]);
+
+    // Friction: Player 0.85 (damped), Others 0.95 (slippery)
+    const friction = isPlayer ? 0.85 : 0.95;
+    world.getComponent(VerletPoint.name).add(centerEntity, [radius/2, friction, 0]);
 
     if (isPlayer) {
         world.getComponent(PlayerTag.name).add(centerEntity, [1]);

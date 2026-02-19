@@ -15,10 +15,10 @@ export class InputSystem {
   private inputY: number = 0;
 
   // Constants
-  // Force reduced from 3000 to 100 per user request
-  private readonly FORCE_MULTIPLIER = 100.0;
-  // Friction increased to 0.8 for aggressive braking (viscous fluid)
-  private readonly FRICTION_FACTOR = 0.8;
+  // Force drastically reduced from 100 to 40 for playable control
+  private readonly FORCE_MULTIPLIER = 40.0;
+  // Friction increased to 0.9 for near-instant braking (highly viscous fluid)
+  private readonly FRICTION_FACTOR = 0.9;
 
   private canvas: HTMLCanvasElement | null;
 
