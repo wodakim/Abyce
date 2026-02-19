@@ -17,43 +17,32 @@ export type TypedArrayConstructor = {
 };
 
 /**
- * ComponentManager implements the Sparse Set pattern for efficient component storage and retrieval.
- * It uses two TypedArrays:
- * - sparse: maps EntityID -> Index in dense array
- * - dense: maps Index -> EntityID
- *
- * The component data itself is stored in a TypedArray (e.g., Float32Array for positions).
- * This structure allows for O(1) addition, removal, and lookup, as well as cache-friendly iteration.
+ * Enhanced ComponentManager to support multi-value components (e.g., Vec2 [x, y]).
+ * The 'stride' parameter defines how many elements per entity.
  */
 export class ComponentManager<T extends TypedArray> {
-  // Maps EntityID to Index in dense array.
-  // Using -1 (NULL_ENTITY) to indicate absence.
   private sparse: Int32Array;
-
-  // Maps Index to EntityID. Used for iterating and for the swap-and-pop removal.
   private dense: Int32Array;
-
-  // The actual component data stored in a TypedArray.
   public data: T;
-
+  private stride: number;
   private count: number;
   private maxEntities: number;
 
-  constructor(ArrayType: TypedArrayConstructor, maxEntities: number = MAX_ENTITIES) {
+  constructor(ArrayType: TypedArrayConstructor, maxEntities: number = MAX_ENTITIES, stride: number = 1) {
     this.maxEntities = maxEntities;
+    this.stride = stride;
     this.sparse = new Int32Array(maxEntities).fill(NULL_ENTITY);
     this.dense = new Int32Array(maxEntities).fill(NULL_ENTITY);
-    this.data = new ArrayType(maxEntities) as T;
+    this.data = new ArrayType(maxEntities * stride) as T;
     this.count = 0;
   }
 
-  /**
-   * Adds a component to an entity.
-   * Complexity: O(1)
-   */
-  add(entity: EntityID, value: number): void {
+  add(entity: EntityID, values: number[]): void {
     if (this.has(entity)) {
-      this.data[this.sparse[entity]] = value;
+      const index = this.sparse[entity];
+      for(let i=0; i<this.stride; i++) {
+        this.data[index * this.stride + i] = values[i];
+      }
       return;
     }
 
@@ -64,14 +53,14 @@ export class ComponentManager<T extends TypedArray> {
     const index = this.count;
     this.sparse[entity] = index;
     this.dense[index] = entity;
-    this.data[index] = value;
+
+    for(let i=0; i<this.stride; i++) {
+        this.data[index * this.stride + i] = values[i];
+    }
+
     this.count++;
   }
 
-  /**
-   * Removes a component from an entity using the swap-and-pop technique.
-   * Complexity: O(1)
-   */
   remove(entity: EntityID): void {
     if (!this.has(entity)) return;
 
@@ -79,59 +68,45 @@ export class ComponentManager<T extends TypedArray> {
     const lastIndex = this.count - 1;
     const lastEntity = this.dense[lastIndex];
 
-    // Move the last element to the hole left by the removed element
     this.dense[indexToRemove] = lastEntity;
     this.sparse[lastEntity] = indexToRemove;
-    this.data[indexToRemove] = this.data[lastIndex];
 
-    // Clear the slot for the removed entity
+    // Move data block
+    for(let i=0; i<this.stride; i++) {
+        this.data[indexToRemove * this.stride + i] = this.data[lastIndex * this.stride + i];
+    }
+
     this.sparse[entity] = NULL_ENTITY;
     this.dense[lastIndex] = NULL_ENTITY;
-
-    // Optional: Reset data value to 0
-    this.data[lastIndex] = 0;
-
     this.count--;
   }
 
-  /**
-   * Checks if an entity has this component.
-   * Complexity: O(1)
-   */
   has(entity: EntityID): boolean {
     return this.sparse[entity] !== NULL_ENTITY;
   }
 
-  /**
-   * Retrieves the component data for an entity.
-   * Complexity: O(1)
-   */
-  get(entity: EntityID): number | undefined {
-    if (!this.has(entity)) return undefined;
-    return this.data[this.sparse[entity]];
+  // Returns raw array index for entity, allowing direct access like data[idx+0], data[idx+1]
+  getIndex(entity: EntityID): number {
+      return this.sparse[entity];
   }
 
-  /**
-   * Returns the number of active components.
-   */
+  // Helper to get values (ALLOCATES ARRAY - use carefully or for debugging)
+  get(entity: EntityID): number[] | undefined {
+    if (!this.has(entity)) return undefined;
+    const idx = this.sparse[entity] * this.stride;
+    const res = [];
+    for(let i=0; i<this.stride; i++) res.push(this.data[idx+i]);
+    return res;
+  }
+
   getCount(): number {
     return this.count;
   }
 
-  /**
-   * Returns the dense array of entity IDs that have this component.
-   * Useful for iterating over all entities with this component.
-   * WARNING: Returns the raw array. Use getCount() to know the valid limit.
-   */
   getDenseEntities(): Int32Array {
     return this.dense;
   }
 
-  /**
-   * Returns the raw data array.
-   * Useful for iterating.
-   * WARNING: Returns the raw array. Use getCount() to know the valid limit.
-   */
   getRawData(): T {
     return this.data;
   }

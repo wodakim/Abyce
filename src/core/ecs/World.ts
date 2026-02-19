@@ -36,30 +36,30 @@ export class World {
   /**
    * Registers a new component type.
    */
-  registerComponent(name: string, ArrayType: TypedArrayConstructor): void {
+  registerComponent(name: string, ArrayType: TypedArrayConstructor, stride: number = 1): void {
     if (this.components.has(name)) {
       throw new Error(`Component "${name}" already registered.`);
     }
-    this.components.set(name, new ComponentManager(ArrayType));
+    this.components.set(name, new ComponentManager(ArrayType, undefined, stride));
   }
 
   /**
    * Gets the ComponentManager for a given component name.
    */
-  getComponent(name: string): ComponentManager<TypedArray> {
+  getComponent<T extends TypedArray>(name: string): ComponentManager<T> {
     const manager = this.components.get(name);
     if (!manager) {
       throw new Error(`Component "${name}" not registered.`);
     }
-    return manager;
+    return manager as ComponentManager<T>;
   }
 
   /**
    * Adds a component to an entity.
    */
-  addComponent(entity: EntityID, name: string, value: number): void {
+  addComponent(entity: EntityID, name: string, values: number[]): void {
     const manager = this.getComponent(name);
-    manager.add(entity, value);
+    manager.add(entity, values);
   }
 
   /**
@@ -81,7 +81,7 @@ export class World {
   /**
    * Gets a component from an entity.
    */
-  getComponentData(entity: EntityID, name: string): number | undefined {
+  getComponentData(entity: EntityID, name: string): number[] | undefined {
     const manager = this.getComponent(name);
     return manager.get(entity);
   }
