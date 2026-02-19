@@ -34,9 +34,15 @@ export const PlayerTag = {
   type: Uint8Array
 };
 
-// New Tag for Food
 export const FoodTag = {
   name: 'foodTag',
   stride: 1,
   type: Uint8Array
+};
+
+// New Color Component
+export const Color = {
+  name: 'color',
+  stride: 3, // [r, g, b]
+  type: Float32Array
 };

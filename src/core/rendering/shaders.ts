@@ -16,13 +16,10 @@ out vec2 v_uv;
 
 void main() {
     // Transform unit quad to world space
-    // Scale by radius, Translate by position
-    vec2 worldPos = (a_quad * a_radius) + a_position;
+    // Scale by radius * 2.0 to give room for soft edge glow/metaball field
+    float visualRadius = a_radius * 2.5;
 
-    // Convert to Clip Space [-1, 1]
-    // Normalized Device Coordinates (NDC)
-    // 0,0 is bottom-left in WebGL. Canvas 0,0 is top-left.
-    // To match canvas (0,0 top-left), we need to flip Y.
+    vec2 worldPos = (a_quad * visualRadius) + a_position;
 
     vec2 zeroToOne = worldPos / u_resolution;
     vec2 zeroToTwo = zeroToOne * 2.0;
@@ -45,10 +42,58 @@ out vec4 outColor;
 
 void main() {
     float dist = length(v_uv);
-    float alpha = 1.0 - smoothstep(0.85, 1.0, dist);
 
+    // Gaussian falloff for metaballs
+    // exp(-k * dist^2)
+    float alpha = exp(-4.0 * dist * dist);
+
+    // Don't discard yet, we accumulate alpha in the framebuffer
     if (alpha < 0.01) discard;
 
-    outColor = vec4(v_color, alpha);
+    outColor = vec4(v_color * alpha, alpha); // Pre-multiplied alpha kind of approach for accumulation
+}
+`;
+
+// Post-processing threshold shader
+export const ppVertexShader = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 a_position;
+out vec2 v_uv;
+void main() {
+    v_uv = a_position * 0.5 + 0.5; // [-1,1] -> [0,1]
+    gl_Position = vec4(a_position, 0.0, 1.0);
+}
+`;
+
+export const ppFragmentShader = `#version 300 es
+precision mediump float;
+uniform sampler2D u_texture;
+in vec2 v_uv;
+out vec4 outColor;
+
+void main() {
+    vec4 color = texture(u_texture, v_uv);
+
+    // Thresholding
+    // If alpha > threshold, solid color.
+    // Use smoothstep for anti-aliased edge.
+
+    float threshold = 0.6;
+    float edge = 0.05;
+
+    float alpha = smoothstep(threshold - edge, threshold + edge, color.a);
+
+    if (alpha < 0.01) discard; // Transparent background
+
+    // Reconstruct color (approximate, since we blended colors)
+    // If we have multi-colored metaballs, simple accumulation might muddy them.
+    // But for now, let's just output the accumulated color normalized by alpha?
+    // color.rgb / color.a might work if we did premultiplied.
+
+    vec3 finalColor = color.rgb / max(color.a, 0.001);
+
+    // Add a rim light or simple shading?
+    // For flat cartoon style:
+    outColor = vec4(finalColor, 1.0);
 }
 `;

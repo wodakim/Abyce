@@ -13,5 +13,6 @@ module.exports = {
     '@typescript-eslint/no-explicit-any': 'error',
     'no-new': 'error',
     'no-array-constructor': 'error',
+    '@typescript-eslint/no-unused-vars': ['error', { 'argsIgnorePattern': '^_' }]
   },
 }

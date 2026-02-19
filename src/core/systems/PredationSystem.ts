@@ -18,23 +18,12 @@ export class PredationSystem {
   }
 
   update(_dt: number) {
-    this.grid.clear();
+    // Grid population is handled by VerletSystem now (shared)
+    // We just reuse the grid state
 
     const count = this.verletPointManager.getCount();
     const activeEntities = this.verletPointManager.getDenseEntities();
     const positions = this.positionManager.getRawData();
-
-    for (let i = 0; i < count; i++) {
-        const entityId = activeEntities[i];
-        const posIdx = this.positionManager.getIndex(entityId) * 2;
-        if (posIdx < 0) continue;
-
-        const x = positions[posIdx];
-        const y = positions[posIdx + 1];
-
-        this.grid.insert(entityId, x, y);
-    }
-
     const verletPoints = this.verletPointManager.getRawData();
 
     for (let i = count - 1; i >= 0; i--) {
