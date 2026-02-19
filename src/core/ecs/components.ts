@@ -1,30 +1,30 @@
 export const Position = {
   name: 'position',
-  stride: 2, // [x, y]
+  stride: 2,
   type: Float32Array
 };
 
 export const PrevPosition = {
   name: 'prevPosition',
-  stride: 2, // [x, y]
+  stride: 2,
   type: Float32Array
 };
 
 export const Acceleration = {
   name: 'acceleration',
-  stride: 2, // [x, y]
+  stride: 2,
   type: Float32Array
 };
 
 export const VerletPoint = {
   name: 'verletPoint',
-  stride: 3, // [radius, friction, isPinned]
+  stride: 3,
   type: Float32Array
 };
 
 export const Constraint = {
   name: 'constraint',
-  stride: 4, // [entityA, entityB, distance, stiffness]
+  stride: 4,
   type: Float32Array
 };
 
@@ -40,9 +40,16 @@ export const FoodTag = {
   type: Uint8Array
 };
 
-// New Color Component
 export const Color = {
   name: 'color',
-  stride: 3, // [r, g, b]
+  stride: 3,
+  type: Float32Array
+};
+
+// New DNA Component
+// [speed, perceptionRadius, r, g, b, density]
+export const DNA = {
+  name: 'dna',
+  stride: 6,
   type: Float32Array
 };

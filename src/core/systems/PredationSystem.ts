@@ -1,6 +1,9 @@
 import { World } from '../ecs/World';
-import { ComponentManager } from '../ecs/ComponentManager';
+import { ComponentManager, TypedArray } from '../ecs/ComponentManager';
 import { SpatialHashGrid } from '../physics/SpatialHashGrid';
+import { PlayerTag } from '../ecs/components';
+import { uiEvents } from '../../ui/App';
+import { audioSystem } from '../audio/AudioSystem';
 
 export class PredationSystem {
   private world: World;
@@ -8,6 +11,7 @@ export class PredationSystem {
 
   private positionManager: ComponentManager<Float32Array>;
   private verletPointManager: ComponentManager<Float32Array>;
+  private playerTagManager: ComponentManager<Uint8Array>;
 
   constructor(world: World, grid: SpatialHashGrid) {
     this.world = world;
@@ -15,11 +19,11 @@ export class PredationSystem {
 
     this.positionManager = world.getComponent('position');
     this.verletPointManager = world.getComponent('verletPoint');
+    this.playerTagManager = world.getComponent('playerTag');
   }
 
   update(_dt: number) {
-    // Grid population is handled by VerletSystem now (shared)
-    // We just reuse the grid state
+    // Reusing grid populated by VerletSystem
 
     const count = this.verletPointManager.getCount();
     const activeEntities = this.verletPointManager.getDenseEntities();
@@ -86,6 +90,17 @@ export class PredationSystem {
       const minDist = pRadius + preyRadius;
 
       if (distSq < minDist * minDist) {
+          // Check if Player was eaten
+          if (this.playerTagManager.has(prey)) {
+              // Game Over logic
+              uiEvents.dispatchEvent(new Event('game-over'));
+          }
+
+          // Audio
+          if (this.playerTagManager.has(predator)) {
+              audioSystem.playEatSound(preyRadius);
+          }
+
           // EAT
           this.world.destroyEntity(prey);
 
