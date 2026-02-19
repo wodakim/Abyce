@@ -1,4 +1,3 @@
-// src/core/ecs/components.ts
 export const Position = {
   name: 'position',
   stride: 2, // [x, y]
@@ -23,18 +22,21 @@ export const VerletPoint = {
   type: Float32Array
 };
 
-// Constraints are stored on a separate entity, linking A and B
 export const Constraint = {
   name: 'constraint',
-  stride: 4, // [entityA_ID, entityB_ID, restingDistance, stiffness]
+  stride: 4, // [entityA, entityB, distance, stiffness]
   type: Float32Array
 };
 
-// Player Tag (No data, just existence)
-// But ComponentManager needs a TypedArray.
-// We can use Uint8Array of size 1 (stride 1) and store 1.
 export const PlayerTag = {
   name: 'playerTag',
+  stride: 1,
+  type: Uint8Array
+};
+
+// New Tag for Food
+export const FoodTag = {
+  name: 'foodTag',
   stride: 1,
   type: Uint8Array
 };
