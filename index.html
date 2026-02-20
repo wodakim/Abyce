@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>ABYCE - Evolution Simulator</title>
+    <style>
+      body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
+      #game-container { position: relative; width: 100vw; height: 100vh; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+      #ui-overlay > * { pointer-events: auto; }
+      #offline-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.9); display: none;
+        align-items: center; justify-content: center; color: white;
+        flex-direction: column; z-index: 9999;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <canvas id="game-canvas"></canvas>
+      <div id="ui-overlay"></div>
+      <div id="offline-overlay">
+        <h1>CONNECTION LOST</h1>
+        <p>Internet access is required to play.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
