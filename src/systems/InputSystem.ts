@@ -2,10 +2,13 @@ import { System } from '../ecs/types';
 
 export class InputSystem extends System {
   private canvas: HTMLCanvasElement;
-  private pointerX: number = 0;
-  private pointerY: number = 0;
   private isPointerDown: boolean = false;
-  private touches: Map<number, { x: number, y: number }> = new Map();
+
+  // Joystick Logic
+  private joystickOrigin = { x: 0, y: 0 };
+  private joystickCurrent = { x: 0, y: 0 };
+  private joystickVector = { x: 0, y: 0 }; // Normalized -1 to 1
+  private maxDragDistance = 50;
 
   constructor(canvasId: string) {
     super();
@@ -13,80 +16,72 @@ export class InputSystem extends System {
     if (!this.canvas) {
       throw new Error(`Canvas element with id '${canvasId}' not found`);
     }
-
     this.initListeners();
   }
 
   private initListeners(): void {
+    const start = (x: number, y: number) => {
+      this.isPointerDown = true;
+      this.joystickOrigin = { x, y };
+      this.joystickCurrent = { x, y };
+      this.updateJoystickVector();
+    };
+
+    const move = (x: number, y: number) => {
+      if (!this.isPointerDown) return;
+      this.joystickCurrent = { x, y };
+      this.updateJoystickVector();
+    };
+
+    const end = () => {
+      this.isPointerDown = false;
+      this.joystickVector = { x: 0, y: 0 };
+    };
+
     // Mouse
-    this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-    this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-    this.canvas.addEventListener('mouseup', () => this.handleMouseUp());
-    this.canvas.addEventListener('mouseleave', () => this.handleMouseUp());
+    this.canvas.addEventListener('mousedown', e => start(e.clientX, e.clientY));
+    this.canvas.addEventListener('mousemove', e => move(e.clientX, e.clientY));
+    this.canvas.addEventListener('mouseup', end);
+    this.canvas.addEventListener('mouseleave', end);
 
     // Touch
-    this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
-    this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
-    this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e));
-    this.canvas.addEventListener('touchcancel', (e) => this.handleTouchEnd(e));
+    this.canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      start(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      move(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchend', e => {
+      e.preventDefault();
+      end();
+    });
   }
 
-  private handleMouseDown(e: MouseEvent): void {
-    this.isPointerDown = true;
-    this.pointerX = e.clientX;
-    this.pointerY = e.clientY;
-  }
+  private updateJoystickVector(): void {
+    const dx = this.joystickCurrent.x - this.joystickOrigin.x;
+    const dy = this.joystickCurrent.y - this.joystickOrigin.y;
+    const dist = Math.hypot(dx, dy);
 
-  private handleMouseMove(e: MouseEvent): void {
-    if (this.isPointerDown) {
-      this.pointerX = e.clientX;
-      this.pointerY = e.clientY;
-    }
-  }
-
-  private handleMouseUp(): void {
-    this.isPointerDown = false;
-  }
-
-  private handleTouchStart(e: TouchEvent): void {
-    e.preventDefault();
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      const touch = e.changedTouches[i];
-      this.touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
-    }
-    this.isPointerDown = true;
-  }
-
-  private handleTouchMove(e: TouchEvent): void {
-    e.preventDefault();
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      const touch = e.changedTouches[i];
-      if (this.touches.has(touch.identifier)) {
-        this.touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
-        // Update main pointer for single-touch logic
-        this.pointerX = touch.clientX;
-        this.pointerY = touch.clientY;
-      }
-    }
-  }
-
-  private handleTouchEnd(e: TouchEvent): void {
-    e.preventDefault();
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      this.touches.delete(e.changedTouches[i].identifier);
-    }
-    if (this.touches.size === 0) {
-      this.isPointerDown = false;
+    if (dist > 0) {
+      const cap = Math.min(dist, this.maxDragDistance);
+      this.joystickVector.x = (dx / dist) * (cap / this.maxDragDistance);
+      this.joystickVector.y = (dy / dist) * (cap / this.maxDragDistance);
+    } else {
+      this.joystickVector = { x: 0, y: 0 };
     }
   }
 
   update(_dt: number): void {
-    // TODO: Update InputComponent of the player entity
-    // const player = this.world.getPlayerEntity();
-    // if (player) { ... }
+    // No-op, state is updated via events
   }
 
-  getPointerPosition(): { x: number, y: number } {
-    return { x: this.pointerX, y: this.pointerY };
+  getJoystick(): { x: number, y: number } {
+    return this.joystickVector;
   }
 }
